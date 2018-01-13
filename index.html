@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DropdownGroupList test</title>
+    <link rel="stylesheet" href="css/dropdowngroupchecklist.css"/>
+</head>
+<body>
+    <ul id="evil-ul">
+        <!--<div id="dropdown" style="border: 1px solid red; width: 100px; height: 30px;"></div>-->
+        <div id="dropdown"></div>
+
+        <div id="dropdown2"></div>
+    </ul>
+    
+    <script src="js/jquery.js"></script>
+    <script src="js/jquery-ui.js"></script>
+    <script src="js/dropdowngroupchecklist-0.1.js"></script>
+    <script>        
+        var array = [1, 2, 3, 4, 5];
+        var options = {
+            //indent: 15,
+            allowIndeterminate: true,
+            maxDropHeight: 300,
+            //checkAllItem: true
+            checkAllItem: {
+                text: '(All)',
+                value: -1
+            }
+        };
+
+        array = [
+            "outerItem1",
+            {
+                text: "Group1",
+                items: [
+                    {
+                        text: "Group1.1",
+                        items: [
+                            "item1.1.1",
+                            {
+                                text: "Group1.1.2",
+                                items: [
+                                    "item1.1.2.1",
+                                    "item1.1.2.2",
+                                    "item1.1.2.3",
+                                    "item1.1.2.4"
+                                ]
+                            },
+                            "item1.1.3"]
+                    }, {
+                        text: "Group1.2",
+                        items: ["item1.2.1", "item1.2.2"]
+                    }, {
+                        text: "Group1.3",
+                        items: ["item1.3.1", "item1.3.2", "item1.3.3", "item1.3.4"]
+                    },
+                    "item1.4"
+                ]
+            }, {
+                text: "Group2",
+                items: ["item2.1", "item2.2", "item2.3", "item2.4", "item2.5"]
+            }, {
+                text: "Group3",
+                items: [
+                    {
+                        text: "Group3.1",
+                        items: ["item3.1.1", "item3.1.2", "item3.1.3"]
+                    }, {
+                        text: "Group3.2",
+                        items: ["item3.2.1", "item3.2.2", "item3.2.3"]
+                    }
+                ]
+            },
+            "outerItem2",
+            { text: "outerItem3", items: [] },
+            "outerItem4",
+            "outerItem5"
+        ];
+
+        array2 = [
+            {
+                text: "Group1",
+                items: [
+                    "item1.1",
+                    "item1.2",
+                    "item1.3"
+                ]
+            }
+        ];
+
+        var d1 = $('#dropdown').dropdownGroupChecklist({ data: array, options: options });
+        var d2 = $('#dropdown2').dropdownGroupChecklist({ data: array2, options: options });
+    </script>
+</body>
+</html>
