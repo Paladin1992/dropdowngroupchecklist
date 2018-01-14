@@ -12,6 +12,18 @@
     $(selectedElement).dropdownGroupChecklist({ data: array [, options: object] });
  
     all options:
+        placeholder
+            description :   A text to display when nothing is set in the control.
+            type        :   string
+            default     :   '' (empty)
+
+        ??? //////////////////////
+        arrowRotate
+            description :   Toggles arrow rotation animation.
+            type        :   boolean
+            default     :   false
+        ??? //////////////////////
+
         maxDropHeight
             description :   The maximum visible height of the dropdown container in pixels.
                             If content would overflow, a vertical scrollbar is displayed.
@@ -70,6 +82,7 @@
     const WIDGET_VERSION = '0.1';
 
     // default values
+    const DEFAULT_PLACEHOLDER = '';
     const DEFAULT_MAX_DROP_HEIGHT = 200; // pixels
     const DEFAULT_INDENT = 15; // pixels
     const DEFAULT_ALLOW_INDETERMINATE = false;
@@ -82,6 +95,10 @@
     // CSS selectors
     const CSS_DDGCL = 'ddgcl';
     const CSS_SELECT = 'ddgcl-select';
+    const CSS_TEXT = 'ddgcl-text';
+    const CSS_ARROW_WRAPPER = 'ddgcl-arrow-wrapper';
+    const CSS_ARROW_UP = 'fa fa-angle-up';
+    const CSS_ARROW_DOWN = 'fa fa-angle-down';
     const CSS_DROPDOWN = 'ddgcl-dropdown';
     const CSS_LIST = 'ddgcl-list';
     const CSS_CHECKBOX = 'input[type="checkbox"]';
@@ -184,8 +201,23 @@
 
         _options: {},
 
-        _$dropdown: null,
-        _isOpen: false,
+        /*
+            $widgetSpan
+                $selectSpan
+                    $textSpan
+                    $arrowSpan
+            $dropdown
+                $list
+        */
+        $widgetSpan: null,
+        $selectSpan: null,
+        $textSpan: null,
+        $arrowSpan: null,
+        $arrowIcon: null,
+        $dropdown: null,
+        $list: null,
+
+        isOpen: false,
 
         _isObject: function(obj) {
             return (!Array.isArray(obj) && typeof obj !== "function" && obj === Object(obj));
@@ -320,44 +352,66 @@
             return result;
         },
         
-        _filterUnchecked: function(checkboxes) {
+        _getCheckStates: function($checkboxes) {
             var self = this;
-            return checkboxes.filter(function() {
+            var counts = {
+                unchecked: 0,
+                indeterminate: 0,
+                checked: 0
+            };
+
+            $checkboxes.each(function() {
                 var chbx = $(this);
                 var checked = chbx.prop('checked');
                 var indeterminate = (self._options.allowIndeterminate && chbx.prop('indeterminate'));
 
-                return !checked && !indeterminate;
+                if (checked) {
+                    counts.checked++;
+                } else {
+                    if (indeterminate) {
+                        counts.indeterminate++;
+                    } else {
+                        counts.unchecked++;
+                    }
+                }
             });
+
+            return counts;
         },
 
         _getCheckStateOfGroup: function($groupUl) {
             // the items we seek are one level below the group header (i.e. targetDepth = groupDepth + 1)
             var targetDepth = parseInt($groupUl.children('li.' + CSS_GROUP_HEADER).attr('data-depth')) + 1;
             var directChildrenCheckboxes = $groupUl.find('li[data-depth=' + targetDepth + '] ' + CSS_CHECKBOX);
-            var $unchecked = this._filterUnchecked(directChildrenCheckboxes);
+            var counts = this._getCheckStates(directChildrenCheckboxes);
 
-            if ($unchecked.length === 0) {
+            // all are checked
+            if (counts.checked === directChildrenCheckboxes.length) {
                 return checkState.checked;
-            } else if ($unchecked.length < directChildrenCheckboxes.length) {
-                return (this._options.allowIndeterminate ? checkState.indeterminate : checkState.unchecked);
-            } else if ($unchecked.length === directChildrenCheckboxes.length) {
+            }
+
+            // all are unchecked
+            if (counts.unchecked === directChildrenCheckboxes.length) {
                 return checkState.unchecked;
             }
+
+            // otherwise mixed
+            return (this._options.allowIndeterminate ? checkState.indeterminate : checkState.unchecked);
         },
 
-        _calculateDropdownWidth: function($list) {
+        _calculateDropdownWidth: function() {
             var self = this;
             var removeUnits = self._removeUnits;
-            var labels = $list.find(`li.` + CSS_CHECK_ALL_ITEM + ` label, 
-                                     li.` + CSS_GROUP_HEADER + ` label,
-                                     li.` + CSS_ITEM + ` label`);
+            var labels = self.$list.find(`li.` + CSS_CHECK_ALL_ITEM + ` label, 
+                                          li.` + CSS_GROUP_HEADER + ` label,
+                                          li.` + CSS_ITEM + ` label`);
 
             var width = 0;
 
             labels.each(function() {
                 var label = $(this);
                 var li = label.parent();
+
                 var sidePadding = removeUnits(li.css('padding-left')) + removeUnits(li.css('padding-right'));
                 var sideBorder = removeUnits(li.css('border-left-width')) + removeUnits(li.css('border-right-width'));
                 var sideMargin = removeUnits(li.css('margin-left')) + removeUnits(li.css('margin-right'));
@@ -397,12 +451,12 @@
         _onBlur: function() {
             setTimeout(function() {
                 var focusedElement = $(document.activeElement);
-                if (focusedElement.is(self._$dropdown) || self._$dropdown.has(focusedElement).length) {
+                if (focusedElement.is(self.$dropdown) || self.$dropdown.has(focusedElement).length) {
                     // if self or child --> still focused
                     console.log('still focused');
                 } else { // other element --> lost focus
                     console.log('lost focus');
-                    self._$dropdown.css({'visibility': 'hidden'});
+                    self.$dropdown.css({'visibility': 'hidden'});
                 }
             }, 0);
         },
@@ -412,151 +466,27 @@
 
             // the "Check All" item
             var checkAllItemOption = self._options.checkAllItem;
-            var str = (checkAllItemOption ? self._createListItem(checkAllItemOption.text, null, CSS_CHECK_ALL_ITEM) : '');
+            var str = (checkAllItemOption
+                       ? self._createListItem(checkAllItemOption.text, null, CSS_CHECK_ALL_ITEM)
+                       : '');
 
             // generate the whole grouped list
-            str = '<ul class="' + CSS_LIST + '">' + str + self._processOptGroup(self.options.data, '') + '</ul>';
-            var $list = $(str);
+            self.$list = $('<ul>')
+                .addClass(CSS_LIST)
+                .append(str + self._processOptGroup(self.options.data, ''));
 
-            // dropdown
-            self._$dropdown = $('<div>').append($list);
-
-            // a "fake" select for the user
-            var $select = $('<select>').addClass(CSS_SELECT);
-            
-            // the <select> must be added to the DOM first to make insertAfter() work
-            self.element
-                .addClass(CSS_DDGCL)
-                .append($select);
-            self._$dropdown.insertAfter($select);
-
-            // to get the size of rendered elements for,
-            // they must exist in the DOM, that's why these are here
-            var calculatedDropdownHeight = self._calculateDropdownHeight();
-            var scrollHeight = self._$dropdown.get(0).scrollHeight;
-            var dropdownHeight = Math.min(calculatedDropdownHeight, scrollHeight + 2);
-
-            // width must be set later, as we need to know whether the vertical scrollbar appears or not
-            var scrollbarWidth = (scrollHeight + 2 > calculatedDropdownHeight ? SCROLLBAR_WIDTH : 0);
-            var calculatedDropdownWidth = self._calculateDropdownWidth($list) + scrollbarWidth;
-            var scrollWidth = self._$dropdown.get(0).scrollWidth;
-            var dropdownWidth = Math.min(calculatedDropdownWidth, scrollWidth + 2);
-            
-            self._$dropdown.addClass(CSS_DROPDOWN)
-                .attr('tabindex', 0)
-                .css({
-                    'min-width': calculatedDropdownWidth + 'px',
-                    'width': dropdownWidth + 'px', // essential to set, otherwise the <div> would fill the available space
-                    'max-height': calculatedDropdownHeight + 'px',
-                    'height': dropdownHeight + 'px',
-                    'overflow-x': 'hidden', // never show horizontal scrollbar
-                    'overflow-y': 'auto' // show vertical scrollbar only when necessary
-                });
-
-            // list is appended to the DOM, we can now access the "Check All" checkbox
-            var $checkAllCheckbox = self._$dropdown.find('.' + CSS_CHECK_ALL_ITEM + ' ' + CSS_CHECKBOX);
-
-            // assign click event on the labels
-            self._$dropdown.find('label').on('click', function(e) {
-                e.stopImmediatePropagation();
-                
-                var label = $(this);
-                var li = label.closest('li');
-
-                if (li.hasClass(CSS_CHECK_ALL_ITEM)) { // "Check All"
-                    self._$dropdown.find(CSS_CHECKBOX)
-                        .prop('checked', $checkAllCheckbox.prop('checked'))
-                        .prop('indeterminate', false);
-                } else { // not checkAll item
-                    var itemCheckState = label.find(CSS_CHECKBOX).prop('checked');
-
-                    if (li.hasClass(CSS_GROUP_HEADER)) { // if group header
-                        // (un)check all children
-                        li.parent().find(CSS_CHECKBOX)
-                          .prop('indeterminate', false)
-                          .prop('checked', itemCheckState);
-                    }
-
-                    var parentGroups = li.parentsUntil('.' + CSS_LIST, 'ul');
-                    var forceIndeterminate = false;
-
-                    // iterate through the parents and set their check states according to that of their children
-                    for (var index = 0; index < parentGroups.length; index++) {
-                        var $groupUl = $(parentGroups.get(index));
-                        var groupCheckState = self._getCheckStateOfGroup($groupUl);
-                        var $groupCheckboxes = $groupUl.children('li.' + CSS_GROUP_HEADER).find(CSS_CHECKBOX);
-
-                        if (self._options.allowIndeterminate) {
-                            if (!forceIndeterminate && groupCheckState === checkState.indeterminate) {
-                                forceIndeterminate = true;
-                            }
-
-                            $groupCheckboxes
-                                .prop('indeterminate', (forceIndeterminate || groupCheckState === checkState.indeterminate))
-                                .prop('checked', (!forceIndeterminate && groupCheckState === checkState.checked));
-                        } else {
-                            $groupCheckboxes
-                                .prop('indeterminate', false)
-                                .prop('checked', groupCheckState === checkState.checked);
-                        }
-                    }
-                }
-
-                // if all the checkboxes are checked, "Check All" becomes checked;
-                // if at least one unchecked or indeterminate is found, "Check All" becomes unchecked
-                // ("Check All" can never be in indeterminate state)
-                var checkboxes = self._$dropdown.find('li:not(.' + CSS_CHECK_ALL_ITEM + ') ' + CSS_CHECKBOX);
-                
-                // change the state of checkAll
-                $checkAllCheckbox.prop('checked', (self._filterUnchecked(checkboxes).length === 0));
-            });
-
-            self._$dropdown.on('focus', function() {
-                console.log('dropdown onfocus');
-            }).on('blur', function() {
-                console.log('dropdown onblur');
-                self._onBlur(self._$dropdown);
-            });
-
-            self._$dropdown.find(':focusable').on('blur', function() {
-                self._onBlur();
-            });
-
-            $select.on('click', function(e) {
-                //e.preventDefault();
-                //e.stopImmediatePropagation();
-
-                if (self._isOpen) { // open -> close
-                    self._$dropdown.css('visibility', 'hidden');
-                } else { // closed -> open
-                    var selectRect = $select.getBoundary().rect;
-
-                    if (selectRect.bottom + dropdownHeight < window.innerHeight) { // down
-                        // dropdown's top left corner goes to the bottom left corner of <select>
-                        self._$dropdown.css({
-                            'top': selectRect.bottom,
-                            'left': selectRect.left
-                        });
-                    } else { // up
-                        // dropdown's bottom left corner goes to the top left corner of <select>
-                        self._$dropdown.css({
-                            'top': selectRect.top - selectRect.height,
-                            'left': selectRect.left
-                        });
-                    }
-
-                    self._$dropdown.css('visibility', 'visible').focus();
-                }
-
-                self._isOpen = !self._isOpen;
-            });
-            
-            return self._$dropdown;
+            // dropdown is the list wrapped in a <div>
+            return $('<div>').append(self.$list);
         },
 
         _initOptions: function() {
             var self = this;
             var options = self.options.options;
+
+            // placeholder
+            self._options.placeholder = (options.placeholder && typeof options.placeholder === 'string'
+                                         ? options.placeholder
+                                         : DEFAULT_PLACEHOLDER);
 
             // maxDropHeight
             self._options.maxDropHeight = (options.maxDropHeight && options.maxDropHeight >= 0
@@ -618,8 +548,183 @@
             var self = this;
             self._initOptions();
 
-            var $dropdownWrapper = self._createDropdown();
+            /*
+                // structure:
+                <span class="ddgcl"> // $widgetSpan
+                    <span class="ddgcl-select"> // $selectSpan
+                        <span class="ddgcl-text">text</span> // $textSpan
+                        <span class="ddgcl-arrow-wrapper"> // $arrowSpan
+                            <i class="fa fa-angle-down"></i>
+                        </span>
+                    </span>
+                </span>
+
+                <div class="ddgcl-dropdown"> // $dropdown
+                    <ul class="ddgcl-list"> // $list
+                        // list
+                    </ul>
+                </div>
+            */
+
+            // fake select
+            self.$arrowIcon = $('<i>').addClass(CSS_ARROW_DOWN);
             
+            self.$textSpan = $('<span>').addClass(CSS_TEXT).text(self._options.placeholder);
+            self.$arrowSpan = $('<span>').addClass(CSS_ARROW_WRAPPER).append(self.$arrowIcon);
+            
+            self.$selectSpan = $('<span>')
+                .css({
+                    'display': 'inline-block',
+                    'overflow': 'hidden',
+                    'position': 'relative',
+                    'z-index': 0
+                })
+                .addClass(CSS_SELECT)
+                .append(self.$textSpan, self.$arrowSpan);
+            self.$widgetSpan = $('<span>').addClass(CSS_DDGCL).append(self.$selectSpan);
+
+            // dropdown
+            self.$dropdown = self._createDropdown().addClass(CSS_DDGCL);
+            
+            // widget is being applied to an existing select
+            if (self.element.is('select')) {
+                // insert after <select>, hide <select>
+                self.$widgetSpan.insertAfter(self.element);
+                self.$dropdown.insertAfter(self.$widgetSpan);
+                self.element.hide();
+            } else { // something else
+                // insert into parent element
+                self.element.append(self.$widgetSpan, self.$dropdown);
+            }
+
+            // to get or set the size of the rendered elements,
+            // they must exist in the DOM, that's why they are set later
+            var calculatedDropdownHeight = self._calculateDropdownHeight();
+            var scrollHeight = self.$dropdown.get(0).scrollHeight;
+            var dropdownHeight = Math.min(calculatedDropdownHeight, scrollHeight + 2);
+
+            // width must be set later, as we need to know whether the vertical scrollbar appears or not
+            var scrollbarWidth = (scrollHeight + 2 > calculatedDropdownHeight ? SCROLLBAR_WIDTH : 0);
+            var calculatedDropdownWidth = self._calculateDropdownWidth() + scrollbarWidth;
+            var scrollWidth = self.$dropdown.get(0).scrollWidth;
+            var dropdownWidth = Math.min(calculatedDropdownWidth, scrollWidth + 2);
+            
+            self.$dropdown
+                .attr('tabindex', 0)
+                .css({
+                    'min-width': calculatedDropdownWidth + 'px',
+                    'width': dropdownWidth + 'px', // essential to set, otherwise the <div> would fill the available space
+                    'max-height': calculatedDropdownHeight + 'px',
+                    'height': dropdownHeight + 'px',
+                    'position': 'absolute',
+                    'overflow-x': 'hidden', // never show horizontal scrollbar
+                    'overflow-y': 'auto', // show vertical scrollbar only when necessary
+                    'visibility': 'hidden',
+                    'white-space': 'nowrap',
+                    'z-index': 1
+                })
+                .addClass(CSS_DROPDOWN);
+
+            // list is appended to the DOM, we can now access the "Check All" checkbox
+            self.$checkAllCheckbox = self.$dropdown.find('.' + CSS_CHECK_ALL_ITEM + ' ' + CSS_CHECKBOX);
+
+            // assign click event on the labels in the dropdown
+            self.$dropdown.find('label').on('click', function(e) {
+                e.stopImmediatePropagation();
+                
+                var label = $(this);
+                var li = label.closest('li');
+
+                if (li.hasClass(CSS_CHECK_ALL_ITEM)) { // "Check All"
+                    self.$dropdown.find(CSS_CHECKBOX)
+                        .prop('checked', self.$checkAllCheckbox.prop('checked'))
+                        .prop('indeterminate', false);
+                } else { // not checkAll item
+                    var itemCheckState = label.find(CSS_CHECKBOX).prop('checked');
+
+                    if (li.hasClass(CSS_GROUP_HEADER)) { // if group header
+                        // (un)check all children
+                        li.parent().find(CSS_CHECKBOX)
+                          .prop('indeterminate', false)
+                          .prop('checked', itemCheckState);
+                    }
+
+                    var parentGroups = li.parentsUntil('.' + CSS_LIST, 'ul');
+                    var forceIndeterminate = false;
+
+                    // iterate through the parents and set their check states according to that of their children
+                    for (var index = 0; index < parentGroups.length; index++) {
+                        var $groupUl = $(parentGroups.get(index));
+                        var groupCheckState = self._getCheckStateOfGroup($groupUl);
+                        var $groupCheckboxes = $groupUl.children('li.' + CSS_GROUP_HEADER).find(CSS_CHECKBOX);
+
+                        if (self._options.allowIndeterminate) {
+                            if (!forceIndeterminate && groupCheckState === checkState.indeterminate) {
+                                forceIndeterminate = true;
+                            }
+
+                            $groupCheckboxes
+                                .prop('indeterminate', (forceIndeterminate || groupCheckState === checkState.indeterminate))
+                                .prop('checked', (!forceIndeterminate && groupCheckState === checkState.checked));
+                        } else {
+                            $groupCheckboxes
+                                .prop('indeterminate', false)
+                                .prop('checked', groupCheckState === checkState.checked);
+                        }
+                    }
+                }
+
+                // if all the checkboxes are checked, "Check All" becomes checked;
+                // if at least one unchecked or indeterminate is found, "Check All" becomes unchecked
+                // ("Check All" can never be in indeterminate state)
+                var checkboxes = self.$dropdown.find('li:not(.' + CSS_CHECK_ALL_ITEM + ') ' + CSS_CHECKBOX);
+                
+                // change the state of checkAll
+                self.$checkAllCheckbox.prop('checked', (self._getCheckStates(checkboxes).checked === checkboxes.length));
+            });
+
+            /*self.$dropdown.on('focus', function() {
+                console.log('dropdown onfocus');
+            }).on('blur', function() {
+                console.log('dropdown onblur');
+                self._onBlur(self.$dropdown);
+            });*/
+
+            /*self.$dropdown.find(':focusable').on('blur', function() {
+                self._onBlur();
+            });*/
+
+            self.$selectSpan.on('click', function(e) {
+                //e.preventDefault();
+                //e.stopImmediatePropagation();
+
+                if (self.isOpen) { // open -> close
+                    self.$dropdown.css('visibility', 'hidden');
+                    self.$arrowIcon.removeClass(CSS_ARROW_UP).addClass(CSS_ARROW_DOWN);
+                } else { // closed -> open
+                    var selectRect = self.$selectSpan.getBoundary().rect;
+
+                    if (selectRect.bottom + dropdownHeight < window.innerHeight) { // down
+                        // dropdown's top left corner goes to the bottom left corner of <select>
+                        self.$dropdown.css({
+                            'top': selectRect.bottom,
+                            'left': selectRect.left
+                        });
+                    } else { // up
+                        // dropdown's bottom left corner goes to the top left corner of <select>
+                        self.$dropdown.css({
+                            'top': selectRect.top - selectRect.height,
+                            'left': selectRect.left
+                        });
+                    }
+
+                    self.$dropdown.css('visibility', 'visible').focus();
+                    self.$arrowIcon.removeClass(CSS_ARROW_DOWN).addClass(CSS_ARROW_UP);
+                }
+
+                self.isOpen = !self.isOpen;
+            });
+
             // remove the <span> element from the DOM being used for determining the width of a text
             $('.ddgcl-temporary-text-wrapper').remove();
         }

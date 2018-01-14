@@ -9,18 +9,30 @@
     }
 
     & .ddgcl-select {
-        background-color: yellow;
+        border: 1px solid #999;
         min-width: 50px;
-        position: relative;
-        z-index: 0;
+        padding: 2px;
     }
 
-    & .ddgcl-dropdown {
+    & .ddgcl-text {
+        padding: 0 2px;
+    }
+
+    & .ddgcl-arrow-wrapper {
+        /*background-color: #090; /* debug only */
+        float: right;
+        padding: 0 3px;
+
+        & i.fa {
+            color: #000;
+            font-weight: bold;
+        }
+    }
+
+    &.ddgcl-dropdown {
         background-color: #fff;
         border: 1px solid #999;
-        position: absolute;
-        visibility: hidden;
-        z-index: 1;
+        outline: none;
     }
         
     & ul:first-of-type { /* outermost <ul> */
@@ -50,7 +62,7 @@
             &.ddgcl-check-all-item,
             &.ddgcl-group-header,
             &.ddgcl-item {
-                padding-right: 4px;
+                padding-right: 8px;
 
                 &:hover {
                     background-color: #3879D9;
